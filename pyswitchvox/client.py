@@ -4,14 +4,18 @@ Copyright (C) 2015, Digium, Inc.
 Matthew Jordan <mjordan@digium.com>
 """
 
-from requests.auth import HTTPDigestAuth
+from requests.auth import HTTPDigestAuth, HTTPBasicAuth
 import requests
 import urllib3
+import logging
+
+logger = logging.getLogger('pyswitchvox')
 
 # Since Switchvox uses a self signed cert, disable the spammy
 # warning message.
 requests.packages.urllib3.disable_warnings()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 class HTTPException(Exception):
     """An exception raised if a non-success response is returned
@@ -48,6 +52,8 @@ class Query(object):
         """
         request_json = {'request': {'method': '.'.join(self._path),
                                     'parameters': kwargs}}
+        
+        logger.info("request: {}".format(request_json))
         return self._client(query=request_json)
 
 
@@ -67,21 +73,23 @@ class Client(object):
 
         self._address = address
         self._session = requests.Session()
-        self._session.auth = self._detect_auth(username, password, address)
+        self._session.auth = self._detect_auth(address, username, password)
         self.timeout = timeout
 
-    def _detect_auth(self, username, password, hostname):
+    def _detect_auth(self, address, username, password):
         """Switchvox 6.6.0.x changed authentication methods.                
         Returns the request auth object. 
         """
         auth = HTTPDigestAuth(username, password)
-
-        r = self._session.post("https://" + hostname + "/json", 
+        logger.debug("Trying HTTPDigestAuth")
+        
+        r = self._session.post("https://" + address + "/json", 
                                json={}, 
                                auth=auth, 
                                verify=False)
         if r.status_code == 401:
-            auth = requests.auth.HTTPBasicAuth(username, password)
+            logger.warning("Using HTTPBasicAuth")
+            auth = HTTPBasicAuth(username, password)
         return auth
     
     def close(self):
@@ -101,10 +109,11 @@ class Client(object):
             verify=False)
 
         if (response.status_code / 100 != 2):
+            logger.error("{} {}".format(response.reason, response.status_code))
             raise HTTPException(response.reason, response.status_code)
 
         json = response.json().get('response')
-
+    
         errors = json.get('errors')
         if errors:
             if type(errors['error']) is list:
@@ -115,8 +124,10 @@ class Client(object):
             else:
                 message = errors['error']['message']
                 code = errors['error']['code']
+            logger.error("{} {}".format(message, init(code)))
             raise ExtendAPIError(message, int(code))
 
+        logger.info("response: {}".format(json))
         return json
 
     def __getattr__(self, name):
