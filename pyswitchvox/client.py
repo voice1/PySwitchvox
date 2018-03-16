@@ -124,7 +124,7 @@ class Client(object):
             else:
                 message = errors['error']['message']
                 code = errors['error']['code']
-            logger.error("{} {}".format(message, init(code)))
+            logger.error("{} {}".format(message, int(code)))
             raise ExtendAPIError(message, int(code))
 
         logger.info("response: {}".format(json))
